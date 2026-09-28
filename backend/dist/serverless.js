@@ -35,6 +35,36 @@ async function bootstrapServerless() {
     return server;
 }
 async function handler(req, res) {
+    const rawUrl = req.url || '';
+    const [pathname, search] = rawUrl.split('?');
+    const isGenericApiPath = !pathname ||
+        pathname === '/api' ||
+        pathname === '/api/' ||
+        pathname === '/api/index' ||
+        pathname === '/api/[...path]' ||
+        pathname === '/api/%5B...path%5D';
+    if (isGenericApiPath) {
+        const matchedPath = req.headers['x-matched-path'] ||
+            req.headers['x-forwarded-uri'] ||
+            req.headers['x-now-route-matches'];
+        if (matchedPath && matchedPath.startsWith('/api') && matchedPath !== '/api' && matchedPath !== '/api/') {
+            const [matchedPathname, matchedSearch] = matchedPath.split('?');
+            const query = search || matchedSearch;
+            req.url = query ? `${matchedPathname}?${query}` : matchedPathname;
+        }
+        else if (search) {
+            const urlParams = new URLSearchParams(search);
+            const pathParam = urlParams.get('path');
+            if (pathParam) {
+                urlParams.delete('path');
+                const remainingQuery = urlParams.toString();
+                const targetPath = pathParam.startsWith('/api')
+                    ? pathParam
+                    : `/api/${pathParam.startsWith('/') ? pathParam.slice(1) : pathParam}`;
+                req.url = remainingQuery ? `${targetPath}?${remainingQuery}` : targetPath;
+            }
+        }
+    }
     if (!isReady) {
         await bootstrapServerless();
     }
