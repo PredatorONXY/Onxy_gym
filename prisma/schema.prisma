@@ -1,136 +1,163 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// Users table (linked to Supabase Auth)
+enum Role {
+  ADMIN
+  USER
+}
+
+enum DietType {
+  VEGETARIAN
+  NON_VEGETARIAN
+}
+
+enum MessageAuthor {
+  USER
+  ADMIN
+}
+
 model User {
-  id              String   @id
-  email           String
-  fullName        String   @map("full_name")
-  isAdmin         Boolean  @default(false) @map("is_admin")
-  isTrainer       Boolean  @default(false) @map("is_trainer")
-  specialization  String?
-  experienceYears Int?     @map("experience_years")
-  bio             String?
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  // Relations
-  clients Client[]
-
+  id String @id @default(uuid()) @db.Uuid
+  email String @unique
+  fullName String @map("full_name")
+  passwordHash String? @map("password_hash")
+  role Role @default(USER)
+  isAdmin Boolean @default(false) @map("is_admin")
+  isTrainer Boolean @default(false) @map("is_trainer")
+  specialization String?
+  experienceYears Int? @map("experience_years")
+  bio String?
+  emailVerified Boolean @default(false) @map("email_verified")
+  emailVerificationTokenHash String? @map("email_verification_token_hash")
+  emailVerificationExpiresAt DateTime? @map("email_verification_expires_at")
+  googleId String? @unique @map("google_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  client Client?
+  authoredMessages ConversationMessage[] @relation("AuthoredMessages")
   @@map("users")
 }
 
-// Clients table
 model Client {
-  id        String   @id @default(uuid())
-  userId    String?  @map("user_id")
-  age       Int?
-  gender    String?
-  goals     String?
-  joinedAt  DateTime @default(now()) @map("joined_at")
-
-  // Relations
-  user            User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sessions        Session[]
-  progressLogs    ProgressLog[]
-  plans           Plan[]
-  dietCharts      DietChart[]
-
+  id String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+  age Int?
+  gender String?
+  goals String?
+  weightKg Decimal? @map("weight_kg") @db.Decimal(5, 2)
+  heightCm Decimal? @map("height_cm") @db.Decimal(5, 2)
+  dietType DietType? @map("diet_type")
+  joinedAt DateTime @default(now()) @map("joined_at")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+  progressLogs ProgressLog[]
+  plans Plan[]
+  dietCharts DietChart[]
+  conversations Conversation[]
   @@map("clients")
 }
 
-// Sessions table
-model Session {
-  id              String   @id @default(uuid())
-  clientId        String   @map("client_id")
-  sessionDate     DateTime @map("session_date")
-  sessionType     String  @map("session_type")
-  durationMinutes Int?    @map("duration_minutes")
-  notes           String?
-  createdAt       DateTime @default(now()) @map("created_at")
-
-  // Relations
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
-  @@map("sessions")
-}
-
-// Progress logs table
-model ProgressLog {
-  id                  String   @id @default(uuid())
-  clientId            String   @map("client_id")
-  logDate             DateTime @map("log_date")
-  weightKg            Decimal? @map("weight_kg")
-  heightCm            Decimal? @map("height_cm")
-  bodyFatPercentage   Decimal? @map("body_fat_percentage")
-  photoUrl            String?  @map("photo_url")
-  notes               String?
-  createdAt           DateTime @default(now()) @map("created_at")
-
-  // Relations
-  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
-  @@map("progress_logs")
-}
-
-// Plans table
-model Plan {
-  id          String     @id @default(uuid())
-  clientId    String     @map("client_id")
-  planType    String?    @map("plan_type")
-  title       String
-  description String?
-  active      Boolean    @default(true)
-  startDate   DateTime?  @map("start_date")
-  endDate     DateTime?  @map("end_date")
-  createdAt   DateTime   @default(now()) @map("created_at")
-
-  // Relations
-  client          Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  workoutExercises WorkoutExercise[]
-
-  @@map("plans")
-}
-
-// Diet Charts table
 model DietChart {
-  id          String    @id @default(uuid())
-  clientId    String    @map("client_id")
-  title       String
+  id String @id @default(uuid()) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  title String
   description String?
-  active      Boolean   @default(true)
-  meals       Json      @default("{}")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at")
-
-  // Relations
+  active Boolean @default(true)
+  meals Json @default("{}")
+  planData Json @default("{}") @map("plan_data")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
+  conversations Conversation[]
+  @@index([clientId, createdAt])
   @@map("diet_charts")
 }
 
-// Workout Exercises table
+model Conversation {
+  id String @id @default(uuid()) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  dietChartId String? @map("diet_chart_id") @db.Uuid
+  subject String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  dietChart DietChart? @relation(fields: [dietChartId], references: [id], onDelete: SetNull)
+  messages ConversationMessage[]
+  @@index([clientId, updatedAt])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id String @id @default(uuid()) @db.Uuid
+  conversationId String @map("conversation_id") @db.Uuid
+  authorId String @map("author_id") @db.Uuid
+  authorRole MessageAuthor @map("author_role")
+  body String
+  createdAt DateTime @default(now()) @map("created_at")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author User @relation("AuthoredMessages", fields: [authorId], references: [id], onDelete: Restrict)
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
+}
+
+model Session {
+  id String @id @default(uuid()) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  sessionDate DateTime @map("session_date") @db.Date
+  sessionType String @map("session_type")
+  durationMinutes Int? @map("duration_minutes")
+  notes String?
+  createdAt DateTime @default(now()) @map("created_at")
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  @@map("sessions")
+}
+
+model ProgressLog {
+  id String @id @default(uuid()) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  logDate DateTime @map("log_date") @db.Date
+  weightKg Decimal? @map("weight_kg") @db.Decimal(5, 2)
+  heightCm Decimal? @map("height_cm") @db.Decimal(5, 2)
+  bodyFatPercentage Decimal? @map("body_fat_percentage") @db.Decimal(4, 2)
+  photoUrl String? @map("photo_url")
+  notes String?
+  createdAt DateTime @default(now()) @map("created_at")
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  @@map("progress_logs")
+}
+
+model Plan {
+  id String @id @default(uuid()) @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  planType String? @map("plan_type")
+  title String
+  description String?
+  active Boolean @default(true)
+  startDate DateTime? @map("start_date") @db.Date
+  endDate DateTime? @map("end_date") @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  workoutExercises WorkoutExercise[]
+  @@map("plans")
+}
+
 model WorkoutExercise {
-  id           String  @id @default(uuid())
-  planId       String  @map("plan_id")
-  exerciseName String  @map("exercise_name")
-  sets         Int?
-  reps         Int?
-  weightKg     Decimal? @map("weight_kg")
-  restSeconds  Int?     @map("rest_seconds")
-  dayOfWeek    Int?     @map("day_of_week")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  // Relations
+  id String @id @default(uuid()) @db.Uuid
+  planId String @map("plan_id") @db.Uuid
+  exerciseName String @map("exercise_name")
+  sets Int?
+  reps Int?
+  weightKg Decimal? @map("weight_kg") @db.Decimal(5, 2)
+  restSeconds Int? @map("rest_seconds")
+  dayOfWeek Int? @map("day_of_week")
+  createdAt DateTime @default(now()) @map("created_at")
   plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
-
   @@map("workout_exercises")
 }
